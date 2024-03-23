@@ -1,0 +1,15 @@
+<!-- myapp/templates/index.html -->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Video Processing</title>
+</head>
+<body>
+    <h1>Video Processing</h1>
+    <form action="{% url 'process_video' %}" method="post">
+        {% csrf_token %}
+        <input type="submit" value="Process Video">
+    </form>
+</body>
+</html>
