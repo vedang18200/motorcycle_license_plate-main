@@ -1,101 +1,110 @@
 from django.shortcuts import render
-
-# Create your views here.
-# myapp/views.py
-
-from django.shortcuts import render
 from django.http import HttpResponse
 import cv2
 import time
 from my_functions import *  # Import your functions from my_functions.py
+
 def index(request):
-    return render(request,'index.html')
+    return render(request, 'index.html')
 
 def process_video(request):
-    source = 'test2.mp4' 
+    if request.method == 'POST' and request.FILES.get('video_file'):
+        video_file = request.FILES['video_file']
 
-    save_video = True # want to save video? (when video as source)
-    show_video=True # set true when using video file
-    save_img=False  # set true when using only image file to save the image
-    # when using image as input, lower the threshold value of image classification
+        # Save the uploaded video file to a temporary location
+        with open('uploaded_video.mp4', 'wb+') as destination:
+            for chunk in video_file.chunks():
+                destination.write(chunk)
 
-    #saveing video as output
-    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    out = cv2.VideoWriter('output.avi', fourcc, 20.0, frame_size)
+        source = 'uploaded_video.mp4'  # Use the uploaded video file as the source
 
-    cap = cv2.VideoCapture(source)
-    while(cap.isOpened()):
-        ret, frame = cap.read()
-        if ret == True:
-            frame = cv2.resize(frame, frame_size)  # resizing image
-            orifinal_frame = frame.copy()
-            frame, results = object_detection(frame) 
+        save_video = True  # want to save video? (when video as source)
+        show_video = True  # set true when using video file
+        save_img = False  # set true when using only image file to save the image
+        frame_size = (640, 480)  # Define the frame size as needed
 
-            rider_list = []
-            head_list = []
-            number_list = []
+        # saving video as output
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        out = cv2.VideoWriter('output.avi', fourcc, 20.0, frame_size)
 
-            for result in results:
-                x1,y1,x2,y2,cnf, clas = result
-                if clas == 0:
-                    rider_list.append(result)
-                elif clas == 1:
-                    head_list.append(result)
-                elif clas == 2:
-                    number_list.append(result)
+        cap = cv2.VideoCapture(source)
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if ret:
+                frame = cv2.resize(frame, frame_size)  # resizing image
+                original_frame = frame.copy()
+                frame, results = object_detection(frame)
 
-            for rdr in rider_list:
-                time_stamp = str(time.time())
-                x1r, y1r, x2r, y2r, cnfr, clasr = rdr
-                for hd in head_list:
-                    x1h, y1h, x2h, y2h, cnfh, clash = hd
-                    if inside_box([x1r,y1r,x2r,y2r], [x1h,y1h,x2h,y2h]): # if this head inside this rider bbox
-                        try:
-                            head_img = orifinal_frame[y1h:y2h, x1h:x2h]
-                            helmet_present = img_classify(head_img)
-                        except:
-                            helmet_present[0] = None
+                rider_list = []
+                head_list = []
+                number_list = []
 
-                        if  helmet_present[0] == True: # if helmet present
-                            frame = cv2.rectangle(frame, (x1h, y1h), (x2h, y2h), (0,255,0), 1)
-                            frame = cv2.putText(frame, f'{round(helmet_present[1],1)}', (x1h, y1h+40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1, cv2.LINE_AA)
-                        elif helmet_present[0] == None: # Poor prediction
-                            frame = cv2.rectangle(frame, (x1h, y1h), (x2h, y2h), (0, 255, 255), 1)
-                            frame = cv2.putText(frame, f'{round(helmet_present[1],1)}', (x1h, y1h), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1, cv2.LINE_AA)
-                        elif helmet_present[0] == False: # if helmet absent 
-                            frame = cv2.rectangle(frame, (x1h, y1h), (x2h, y2h), (0, 0, 255), 1)
-                            frame = cv2.putText(frame, f'{round(helmet_present[1],1)}', (x1h, y1h+40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1, cv2.LINE_AA)
+                for result in results:
+                    x1, y1, x2, y2, cnf, clas = result
+                    if clas == 0:
+                        rider_list.append(result)
+                    elif clas == 1:
+                        head_list.append(result)
+                    elif clas == 2:
+                        number_list.append(result)
+
+                for rdr in rider_list:
+                    time_stamp = str(time.time())
+                    x1r, y1r, x2r, y2r, cnfr, clasr = rdr
+                    for hd in head_list:
+                        x1h, y1h, x2h, y2h, cnfh, clash = hd
+                        if inside_box([x1r, y1r, x2r, y2r], [x1h, y1h, x2h, y2h]):  # if this head inside this rider bbox
                             try:
-                                cv2.imwrite(f'riders_pictures/{time_stamp}.jpg', frame[y1r:y2r, x1r:x2r])
+                                head_img = original_frame[y1h:y2h, x1h:x2h]
+                                helmet_present = img_classify(head_img)
                             except:
-                                print('could not save rider')
+                                helmet_present = [None]
 
-                            for num in number_list:
-                                x1_num, y1_num, x2_num, y2_num, conf_num, clas_num = num
-                                if inside_box([x1r,y1r,x2r,y2r], [x1_num, y1_num, x2_num, y2_num]):
-                                    try:
-                                        num_img = orifinal_frame[y1_num:y2_num, x1_num:x2_num]
-                                        cv2.imwrite(f'number_plates/{time_stamp}_{conf_num}.jpg', num_img)
-                                    except:
-                                        print('could not save number plate')
-                                        
-            if save_video: # save video
-                out.write(frame)
-            if save_img: #save img
-                cv2.imwrite('saved_frame.jpg', frame)
-            if show_video: # show video
-                frame = cv2.resize(frame, (900, 450))  # resizing to fit in screen
-                cv2.imshow('Frame', frame)
+                            if helmet_present[0] == True:  # if helmet present
+                                frame = cv2.rectangle(frame, (x1h, y1h), (x2h, y2h), (0, 255, 0), 1)
+                                frame = cv2.putText(frame, f'{round(helmet_present[1], 1)}', (x1h, y1h + 40),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                            elif helmet_present[0] == None:  # Poor prediction
+                                frame = cv2.rectangle(frame, (x1h, y1h), (x2h, y2h), (0, 255, 255), 1)
+                                frame = cv2.putText(frame, f'{round(helmet_present[1], 1)}', (x1h, y1h),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                            elif helmet_present[0] == False:  # if helmet absent
+                                frame = cv2.rectangle(frame, (x1h, y1h), (x2h, y2h), (0, 0, 255), 1)
+                                frame = cv2.putText(frame, f'{round(helmet_present[1], 1)}', (x1h, y1h + 40),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                                try:
+                                    cv2.imwrite(f'riders_pictures/{time_stamp}.jpg', original_frame[y1r:y2r, x1r:x2r])
+                                except:
+                                    print('could not save rider')
 
+                                for num in number_list:
+                                    x1_num, y1_num, x2_num, y2_num, conf_num, clas_num = num
+                                    if inside_box([x1r, y1r, x2r, y2r], [x1_num, y1_num, x2_num, y2_num]):
+                                        try:
+                                            num_img = original_frame[y1_num:y2_num, x1_num:x2_num]
+                                            cv2.imwrite(f'number_plates/{time_stamp}_{conf_num}.jpg', num_img)
+                                        except:
+                                            print('could not save number plate')
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+                if save_video:  # save video
+                    out.write(frame)
+                if save_img:  # save img
+                    cv2.imwrite('saved_frame.jpg', frame)
+                if show_video:  # show video
+                    frame = cv2.resize(frame, (900, 450))  # resizing to fit in screen
+                    cv2.imshow('Frame', frame)
+
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
+            else:
                 break
-                
-        else:
-            break
 
-    cap.release()
-    cv2.destroyAllWindows()
-    print('Execution completed')
+        cap.release()
+        out.release()
+        cv2.destroyAllWindows()
+        print('Execution completed')
 
-    return HttpResponse('Video processing completed.')
+        return HttpResponse('Video processing completed.')
+    else:
+        return HttpResponse('Please upload a video file.')
